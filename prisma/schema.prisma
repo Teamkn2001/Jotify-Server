@@ -1,0 +1,80 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int          @id @default(autoincrement())
+  username     String?
+  email        String       @unique
+  password     String
+  profileImage String?
+  Permission   Permission[]
+  Comment      Comment[]
+  Document     Document[]
+}
+
+model Document {
+  id         Int          @id @default(autoincrement())
+  title      String       @default("Untitled")
+  content    String?
+  createdAt  DateTime     @default(now()) @db.Timestamp(0)
+  updatedAt  DateTime     @updatedAt @db.Timestamp(0)
+  userId     Int
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Permission Permission[]
+  Comment    Comment[]
+  Version    Version[]
+}
+
+model Permission {
+  id         Int            @id @default(autoincrement())
+  permission PermissionType
+  userId     Int
+  documentId Int
+  user       User           @relation(fields: [userId], references: [id])
+  document   Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+enum PermissionType {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+model Comment {
+  id         Int      @id @default(autoincrement())
+  message    String
+  createdAt  DateTime @default(now())
+  userId     Int
+  documentId Int
+  user       User     @relation(fields: [userId], references: [id])
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+model Version {
+  id            Int      @id @default(autoincrement())
+  versionNumber DateTime @default(now()) @db.Timestamp(0)
+  content       String
+  documentId    Int
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+// model Version {
+//   id            Int      @id @default(autoincrement())
+//   versionNumber String // << this seem not use or use at datetime
+//   content       String
+//   createdAt     DateTime @default(now()) @db.Timestamp(0)
+//   documentId    Int
+//   document      Document @relation(fields: [documentId], references: [id])
+// }
