@@ -13,8 +13,8 @@ userRoute.patch('/profile/editProfile/:userId',upload.single('image'), userContr
 
 // create edit doc
 userRoute.post('/createDocument/:userId', userController.createDoc)
-userRoute.get('/getDocument', userController.getDoc)
-userRoute.patch('/document/updateDocument/:documentId', userController.updateDoc)
+userRoute.get('/getDocument/:docId', userController.getDoc)
+userRoute.patch('/document/updateDocument/:documentId', upload.single('image'), userController.updateDoc)
 userRoute.patch('/document/updateTitle/:documentId', userController.updateTitle)
 userRoute.delete('/document/deleteDocument/:documentId', userController.deleteDoc)
 

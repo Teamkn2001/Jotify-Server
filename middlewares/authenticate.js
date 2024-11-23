@@ -26,7 +26,6 @@ module.exports = async(req, res, next) => {
 
         req.user = findUser
    
-
         next()
     } catch (error) {
         next(error)

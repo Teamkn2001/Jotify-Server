@@ -10,8 +10,7 @@ const userController = {};
 userController.getAllDoc = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    console.log(userId);
-
+    // console.log(userId);
     const isUserExist = await prisma.user.findUnique({
       where: {
         id: +userId,
@@ -20,15 +19,17 @@ userController.getAllDoc = async (req, res, next) => {
     if (!isUserExist) {
       createError(401, "Unauthorized");
     }
-
     const allDocuments = await prisma.document.findMany({
       where: {
         userId: +userId,
       },
+      include :{
+        content : true
+      },
       orderBy: {
         createdAt: "desc",
       },
-    });
+    });  
 
     res.json({ allDocuments });
   } catch (error) {
@@ -192,23 +193,59 @@ userController.createDoc = async (req, res, next) => {
       },
     });
 
+    console.log('pageData', pageData)
+
+    const pageContentData = await prisma.content.create({
+      data : {
+        documentId : pageData.id
+      }
+    })
+
+    console.log('pageContentData', pageContentData)
+
     res.json({ msg: "create success", pageData });
   } catch (error) {
     next(error);
   }
 };
-userController.getDoc = async (req, res) => {
+// blank func
+userController.getDoc = async (req, res, next) => {
   try {
-  } catch (error) {}
+    const { docId } = req.params
+    const  userId  = req.user
+
+    console.log('userId', userId.id)
+
+    const DocumentById = await prisma.document.findMany({
+      where: {
+        userId: userId.id,
+        id : +docId
+      },
+      include :{
+        content : true
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    }); 
+
+    res.json({ DocumentById })
+  } catch (error) {
+    next(error)
+  }
 };
 userController.updateDoc = async (req, res, next) => {
   try {
     const { documentId } = req.params;
-    const { content } = req.body;
+    const  content  = req.body;
 
-    console.log(documentId);
-    console.log(content);
-    // console.log(req.body)
+    console.log("documentId", documentId);
+    // console.log("content", content);
+    // deconstruct to get array for map to store data
+    const arrayContent = JSON.stringify(content)
+    console.log("arrayContent==" , arrayContent)
+    
+    // console.log("req.body=---",content)
 
     const idDocExist = await prisma.document.findUnique({
       where: {
@@ -219,14 +256,31 @@ userController.updateDoc = async (req, res, next) => {
       createError(400, "document  not found");
     }
 
-    const updateContent = await prisma.document.update({
-      where: {
-        id: +documentId,
+    console.log('idDocExist', idDocExist)
+
+    // map for get data in each page!
+    // const contentEntries =  arrayContent.map( el => {
+    //   return {text: el, documentId : +documentId}
+    // })
+
+    // console.log("contentEntries ==", contentEntries)
+
+    const updateContent = await prisma.content.update({
+      where : {
+        documentId : +documentId
       },
-      data: {
-        content: content,
-      },
+      data : {
+        text : arrayContent
+      }
     });
+
+    // const createBackUp = await prisma.version.create({
+    //   data : {
+    //     title : idDocExist.title,
+    //     content : arrayContent,
+    //     documentId : +documentId
+    //   }
+    // })
 
     res.json({ mes: "updated success" });
   } catch (error) {
@@ -459,3 +513,4 @@ userController.getVersionDoc = async (req, res, next) => {
 };
 
 module.exports = userController;
+ 
