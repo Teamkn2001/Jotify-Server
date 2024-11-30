@@ -23,7 +23,7 @@ const userData = [
     profileImage: "https://www.svgrepo.com/show/420361/avatar-man-muslim.svg",
   },
 ];
-
+ 
 console.log("DB_SEED =", userData);
 
 async function run() {

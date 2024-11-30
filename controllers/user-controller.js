@@ -4,6 +4,7 @@ const cloudinary = require("../configs/cloudinary");
 const fs = require("fs/promises");
 const bcrypt = require("bcryptjs");
 const path = require("path");
+const { permission, title } = require("process");
 
 const userController = {};
 
@@ -21,17 +22,28 @@ userController.getAllDoc = async (req, res, next) => {
     }
     const allDocuments = await prisma.document.findMany({
       where: {
-        userId: +userId,
-      },
-      include :{
-        content : true
+        ownerId: +userId,
       },
       orderBy: {
         createdAt: "desc",
       },
-    });  
+    });
 
-    res.json({ allDocuments });
+    const allSharedDocuments = await prisma.permission.findMany({
+      where: {
+        userId: +userId,
+        permission: {
+          not: "ADMIN",
+        },
+      },
+      include: {
+        document: true,
+      },
+    });
+
+    console.log("allSharedDocuments ===", allSharedDocuments);
+
+    res.json({ allDocuments, allSharedDocuments });
   } catch (error) {
     console.log(error);
   }
@@ -58,12 +70,26 @@ userController.getFilteredDoc = async (req, res, next) => {
       where: {
         title: {
           contains: searchTitle,
-          // mode: 'insensitive'
         },
       },
     });
 
-    res.json({ allFilteredDocs });
+    // get Mutual Document
+    const allSharedDocuments = await prisma.permission.findMany({
+      where: {
+        userId: +userId,
+        document: {
+          title: {
+            contains: searchTitle,
+          },
+        },
+      },
+      include: {
+        document: true,
+      },
+    });
+
+    res.json({ allFilteredDocs, allSharedDocuments });
   } catch (error) {
     next(error);
   }
@@ -189,62 +215,114 @@ userController.createDoc = async (req, res, next) => {
 
     const pageData = await prisma.document.create({
       data: {
-        userId: +userId,
+        ownerId: +userId,
       },
     });
 
-    console.log('pageData', pageData)
+    const addOwnerPermission = await prisma.permission.create({
+      data: {
+        userId: +userId,
+        documentId: pageData.id,
+        permission: "ADMIN",
+      },
+    });
 
-    const pageContentData = await prisma.content.create({
-      data : {
-        documentId : pageData.id
-      }
-    })
-
-    console.log('pageContentData', pageContentData)
+    console.log("pageData ==", pageData);
+    console.log("addOwnerPermission ==", addOwnerPermission);
 
     res.json({ msg: "create success", pageData });
   } catch (error) {
     next(error);
   }
 };
-// blank func
+
 userController.getDoc = async (req, res, next) => {
   try {
-    const { docId } = req.params
-    const  userId  = req.user
+    const { docId } = req.params;
+    const userId = req.user;
 
-    console.log('userId', userId.id)
+    console.log("userId", userId.id);
 
-    const DocumentById = await prisma.document.findMany({
+    const getDocumentContent = await prisma.document.findFirst({
       where: {
-        userId: userId.id,
-        id : +docId
+        id: +docId,
       },
-      include :{
-        content : true
+      select: {
+        id: true,
+        title: true,
+        content: true,
+        ownerId: true,
+        owner: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
+        Permissions: {
+          where: {
+            documentId: +docId,
+          },
+        },
+        Comments: {
+          orderBy: {
+            createdAt: "desc",
+          },
+          select: {
+            id: true,
+            message: true,
+            createdAt: true,
+            updatedAt: true,
+            user: {
+              select: {
+                id: true,
+                username: true,
+                email: true,
+              },
+            },
+          },
+        },
+        Versions: {
+          orderBy: {
+            versionNumber: "desc",
+          },
+          select: {
+            id: true,
+            versionNumber: true,
+            title: true,
+          },
+        },
       },
-      orderBy: {
-        createdAt: "desc",
-      },
-    }); 
+    });
+    if (!getDocumentContent) {
+      createError(400, "document not found");
+    }
 
-    res.json({ DocumentById })
+    const hasPermission =
+      getDocumentContent.ownerId === userId.id ||
+      getDocumentContent.Permissions.length > 0;
+
+    if (!hasPermission) {
+      createError(401, "Unauthorized and no permission");
+    }
+
+    res.json({ getDocumentContent });
   } catch (error) {
-    next(error)
+    next(error);
   }
 };
+// now use socket can delete later on
 userController.updateDoc = async (req, res, next) => {
   try {
     const { documentId } = req.params;
-    const  content  = req.body;
+    const { title, content } = req.body;
 
     console.log("documentId", documentId);
-    // console.log("content", content);
+    console.log("title ===", title, "content ===========", content);
     // deconstruct to get array for map to store data
-    const arrayContent = JSON.stringify(content)
-    console.log("arrayContent==" , arrayContent)
-    
+    const arrayContent = JSON.stringify(content);
+    // console.log("arrayContent==", arrayContent);
+
     // console.log("req.body=---",content)
 
     const idDocExist = await prisma.document.findUnique({
@@ -256,38 +334,21 @@ userController.updateDoc = async (req, res, next) => {
       createError(400, "document  not found");
     }
 
-    console.log('idDocExist', idDocExist)
-
-    // map for get data in each page!
-    // const contentEntries =  arrayContent.map( el => {
-    //   return {text: el, documentId : +documentId}
-    // })
-
-    // console.log("contentEntries ==", contentEntries)
-
-    const updateContent = await prisma.content.update({
-      where : {
-        documentId : +documentId
+    const updateContent = await prisma.document.update({
+      where: {
+        id: +documentId,
       },
-      data : {
-        text : arrayContent
-      }
+      data: {
+        content: arrayContent,
+      },
     });
-
-    // const createBackUp = await prisma.version.create({
-    //   data : {
-    //     title : idDocExist.title,
-    //     content : arrayContent,
-    //     documentId : +documentId
-    //   }
-    // })
 
     res.json({ mes: "updated success" });
   } catch (error) {
     next(error);
   }
 };
-
+// now use socket can delete later on
 userController.updateTitle = async (req, res, next) => {
   try {
     const { documentId } = req.params;
@@ -350,6 +411,7 @@ userController.deleteDoc = async (req, res) => {
 };
 
 // --------- Permission part ------------------
+// now not use this due to already set at createDoc
 userController.addOwnerPermission = async (req, res, next) => {
   try {
     // console.log("first")
@@ -388,43 +450,45 @@ userController.givePermission = async (req, res, next) => {
       },
     });
     if (!isUserExist) {
-     createError(400, "user is not exist");
+      createError(400, "user is not exist");
     }
     // the owner can not change their status to Editor Viewer
-    if(identity == userOwner.email){
-      createError(400, "you are the Owner of document")
+    if (identity == userOwner.email) {
+      createError(400, "you are the Owner of document");
     }
 
     // cannot give permission who already set must change instead
     const findUserByEmail = await prisma.user.findFirst({
-      where : {
-        email : identity
-      }
-    })
-    console.log(findUserByEmail)
+      where: {
+        email: identity,
+      },
+    });
+    console.log(findUserByEmail);
 
     const isUserHasDuplicatePermission = await prisma.permission.findFirst({
-      where : {
-        userId : +findUserByEmail.id
-      }
-    })
+      where: {
+        userId: +findUserByEmail.id,
+        documentId: +documentId,
+      },
+    });
+
     // console.log("isUserHasDuplicatePermission",isUserHasDuplicatePermission)
-    if(isUserHasDuplicatePermission){
-      createError(400, "user already has permission")
+    if (isUserHasDuplicatePermission) {
+      createError(400, "user already has permission");
     }
 
     const data = {
-      documentId : +documentId,
-      userId : +findUserByEmail.id,
-      permission : permission
-    }
+      documentId: +documentId,
+      userId: +findUserByEmail.id,
+      permission: permission,
+    };
 
     // console.log(data)
     const givePermission = await prisma.permission.create({
       data,
-    })
+    });
 
-    res.json({ msg: `gave permission to ${identity}`, data : givePermission });
+    res.json({ msg: `gave permission to ${identity}`, data: givePermission });
   } catch (error) {
     next(error);
   }
@@ -432,44 +496,54 @@ userController.givePermission = async (req, res, next) => {
 
 userController.getAllUserPermission = async (req, res, next) => {
   try {
-    const { documentId } = req.params
-    console.log(documentId)
+    const { documentId } = req.params;
+    console.log(documentId);
 
     // validate
     // check isexist document??
 
     const getAllUserPermission = await prisma.permission.findMany({
-      where : {
-        documentId : +documentId
+      where: {
+        documentId: +documentId,
       },
       // include select all user data that appear in permission
-      include : {
-        user : true
-      }
-    })
+      include: {
+        user: true,
+      },
+    });
 
-    res.json({ getAllUserPermission })
+    res.json({ getAllUserPermission });
   } catch (error) {
-    next(error)
+    next(error);
   }
-}
+};
 userController.deletePermission = async (req, res, next) => {
   try {
-    const { permissionId } = req.params
-    console.log(permissionId)
+    const { permissionId } = req.params;
+    console.log(permissionId);
 
     // validate
-    const deletePermission = await prisma.permission.delete({
-      where : {
-        id : +permissionId
-      }
-    })
+    const isUserAdmin = await prisma.permission.findFirst({
+      where: {
+        id: +permissionId,
+      },
+    });
 
-    res.json({ msg : "remove success"})
+    if (isUserAdmin.permission === "ADMIN") {
+      createError(400, "cannot delete your Admin status");
+    }
+    console.log("🤣🤣🤣🤣", isUserAdmin);
+    const deletePermission = await prisma.permission.delete({
+      where: {
+        id: +permissionId,
+      },
+    });
+
+    res.json({ msg: "remove success" });
   } catch (error) {
-    next(error)
+    next(error);
   }
-}
+};
 // --------Rollback save part -----------------
 userController.saveBackupVersion = async (req, res, next) => {
   try {
@@ -501,9 +575,9 @@ userController.getVersionDoc = async (req, res, next) => {
       where: {
         documentId: +documentId,
       },
-      orderBy : {
-        id : 'desc'
-      }
+      orderBy: {
+        id: "desc",
+      },
     });
 
     res.json({ saveBackup });
@@ -513,4 +587,3 @@ userController.getVersionDoc = async (req, res, next) => {
 };
 
 module.exports = userController;
- 
